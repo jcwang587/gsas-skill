@@ -90,17 +90,17 @@ gpx = G2sc.G2Project(gpxfile='/path/to/project.gpx')
 ```python
 # Histograms (powder patterns)
 for h in gpx.histograms():
-    h.name                  # e.g. "PWDR RuO_v2_80.csv"
-    h.get_wR()              # weighted profile R, e.g. 12.638
+    h.name                  # str, e.g. "PWDR <data_filename>"
+    h.get_wR()              # weighted profile R, percent (float)
     # h.getdata('X'/'Yobs'/'Ycalc'/'Background'/'Residual'/'Weight') -> numpy arrays
 
 # Phases
 for p in gpx.phases():
     p.name
-    p.get_cell()                  # dict: length_a/b/c, angle_alpha/beta/gamma, volume
-    p.get_cell_and_esd()          # (cell_dict, esd_dict) — esds keyed the same way
-    p.data['General']['SGData']['SpGrp']  # space group string, e.g. "P 4_2/m n m"
-    # p.atoms()                   # atoms with .label, .type, .coordinates, .occupancy, .uiso
+    p.get_cell()                          # dict: length_a/b/c, angle_alpha/beta/gamma, volume
+    p.get_cell_and_esd()                  # (cell_dict, esd_dict) — esds keyed the same way
+    p.data['General']['SGData']['SpGrp']  # GSAS-style space-group string (note spacing/case)
+    # p.atoms()                           # atoms with .label, .type, .coordinates, .occupancy, .uiso
 ```
 
 ### Rwp, GOF, χ² (project-level refinement stats)
@@ -119,15 +119,38 @@ rv['Nvars']  # refined variables
 
 Confirm with the user whether they want **GOF** or **GOF² (= reduced χ²)** when they say "chi-square" — both are common; default to GOF² (IUCr).
 
-`histogram.residuals` also has `wR`, `R`, `Rb`, per-phase `Rf`, `Rf^2`, `Nref`, `sumInt` — but not GOF/chi².
+### Rp (unweighted profile R)
+
+Rp lives on the histogram, not in `Rvals`:
+
+```python
+for h in gpx.histograms():
+    Rp = h.residuals['R']    # unweighted profile R, percent — what papers call "Rp"
+    Rwp = h.residuals['wR']  # same number as h.get_wR()
+```
+
+`histogram.residuals` also has `Rb`, per-phase `Rf`, `Rf^2`, `Nref`, `sumInt` — but not GOF/chi².
+
+### Calculated density (ρcalc)
+
+GSAS-II stores the unit-cell mass (sum of atomic weight × site occupancy × multiplicity, in amu) on the phase:
+
+```python
+mass_amu = phase.data['General']['Mass']           # amu per unit cell
+V_A3     = phase.get_cell()['volume']              # Å³
+rho_gcm3 = mass_amu / (V_A3 * 1e-24 * 6.02214076e23)
+# equivalently: rho = 1.66054 * mass_amu / V_A3
+```
+
+This already accounts for partial occupancies on shared sites (multi-element solid solutions, mixed-occupancy disorder, etc.). Don't multiply by Z — the stored Mass is already the *total* cell content.
 
 ### Formatting values with esds
 
-GSAS-II ships a helper that formats `value(esd)` like papers do (`5.6226(1)` etc.):
+GSAS-II ships a helper that formats `value(esd)` like papers do (`5.6226(1)`, `0.31197(8)`, etc.):
 
 ```python
 from GSASII import GSASIImath as G2mth
-G2mth.ValEsd(cell['length_a'], esd['length_a'])   # -> "4.5296(4)"
+G2mth.ValEsd(value, esd)   # -> "<value>(<esd_in_last_digits>)"
 ```
 
 For batch extraction across many gpx files, glob the folder and call the same methods; results are plain Python floats / numpy scalars.
