@@ -3,33 +3,80 @@ name: gsas
 description: Open GSAS-II project files (.gpx) on this machine and extract refinement values (wR, lattice parameters, phase info, atom params, histogram data). Use whenever the user asks to read, inspect, compare, or batch-extract values from .gpx files.
 ---
 
-# GSAS-II scripting on this machine
+# GSAS-II scripting
 
-## Environment
+## Configuration (per-machine)
 
-- GSAS-II source tree: `/Users/jiachengwang/g2main/GSAS-II`
-- Python interpreter with all GSAS-II deps installed (numpy, scipy, matplotlib, wx, etc.):
-  `/Users/jiachengwang/g2main/bin/python3.13`
-- Config: `/Users/jiachengwang/.GSASII/config.ini`
-- Binary dir auto-detected: `GSASII-bin/mac_arm_p3.13_n2.2`
+Machine-specific paths live in `config.json` next to this `SKILL.md` — **never hardcode `/Users/...` paths in this file**. All snippets below use `<gsas_root>` and `<python>` as placeholders that you substitute at runtime from `config.json`.
 
-Always use that interpreter — system `python3` does not have numpy.
+Schema (see `config.example.json`):
+
+```json
+{
+  "gsas_root": "<absolute path to the GSAS-II tree (parent of the inner GSASII/ package)>",
+  "python":    "<absolute path to a python with GSAS-II deps installed>"
+}
+```
+
+### First-time setup (auto-bootstrap)
+
+On first invocation, check whether `config.json` exists alongside this file. If not, run the bootstrap below — it probes common install locations, verifies the import works, and writes `config.json`. Re-run if GSAS-II moves.
+
+```bash
+SKILL_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$HOME/.claude/skills/gsas/SKILL.md}")" && pwd)"
+
+# 1. Find GSAS-II root (parent of the inner GSASII/ package)
+GSAS_ROOT=""
+for cand in "$HOME/g2main/GSAS-II" "$HOME/GSAS-II" "/opt/GSAS-II"; do
+  [ -d "$cand/GSASII" ] && GSAS_ROOT="$cand" && break
+done
+[ -z "$GSAS_ROOT" ] && { echo "GSAS-II tree not found — set gsas_root manually in config.json"; exit 1; }
+
+# 2. Find a python with GSAS-II deps
+PY=""
+for cand in "$HOME/g2main/bin/python3.13" "$HOME/g2main/bin/python3"; do
+  [ -x "$cand" ] && PY="$cand" && break
+done
+[ -z "$PY" ] && { echo "python3.13 not found — set python manually in config.json"; exit 1; }
+
+# 3. Verify the import actually works
+"$PY" -c "import sys; sys.path.insert(0, '$GSAS_ROOT'); from GSASII import GSASIIscriptable" \
+  || { echo "GSASIIscriptable import failed under $PY — check installation"; exit 1; }
+
+# 4. Write config
+cat > "$SKILL_DIR/config.json" <<EOF
+{
+  "gsas_root": "$GSAS_ROOT",
+  "python":    "$PY"
+}
+EOF
+echo "Wrote $SKILL_DIR/config.json"
+```
+
+After bootstrap, read the values once per session before generating any snippet:
+
+```bash
+GSAS_ROOT=$(jq -r .gsas_root ~/.claude/skills/gsas/config.json)
+PY=$(jq -r .python           ~/.claude/skills/gsas/config.json)
+```
+
+Substitute `$GSAS_ROOT` for `<gsas_root>` and `$PY` for `<python>` in the snippets below.
 
 ## Importing the scriptable API
 
-The package has been restructured so `GSASIIscriptable` uses **relative imports**. The old `sys.path.insert(...,'GSASII')` + `import GSASIIscriptable` pattern fails with `ImportError: attempted relative import with no known parent package`.
+`GSASIIscriptable` uses **relative imports**. The old `sys.path.insert(...,'GSASII')` + `import GSASIIscriptable` pattern fails with `ImportError: attempted relative import with no known parent package`.
 
 Correct pattern:
 
 ```python
 import sys
-sys.path.insert(0, '/Users/jiachengwang/g2main/GSAS-II')   # parent of the GSASII package
+sys.path.insert(0, '<gsas_root>')   # parent of the GSASII package
 from GSASII import GSASIIscriptable as G2sc
 ```
 
 Run with:
 ```bash
-/Users/jiachengwang/g2main/bin/python3.13 script.py
+<python> script.py
 ```
 
 ## Opening a project
@@ -94,10 +141,10 @@ For batch extraction across many gpx files, glob the folder and call the same me
 
 ## Pitfalls
 
-- Don't add `GSAS-II/GSASII` to sys.path — the inner directory is the package, not a script root. Always add the parent (`GSAS-II/`).
-- Don't use the system Python; numpy import will fail.
+- Don't add `<gsas_root>/GSASII` to sys.path — the inner directory is the package, not a script root. Always add the parent (`<gsas_root>`).
+- Don't use the system Python; numpy import will fail. Always use `<python>` from `config.json`.
 - Each histogram may print `5 values read from .../config.ini` and a binary-dir line on import — that's normal stdout, not an error.
-- python-docx is not installed in the GSAS-II env by default. Install once: `/Users/jiachengwang/g2main/bin/python3.13 -m pip install python-docx -q`.
+- python-docx is not installed in the GSAS-II env by default. Install once: `<python> -m pip install python-docx -q`.
 
 ## Editing Word docs with extracted values
 
